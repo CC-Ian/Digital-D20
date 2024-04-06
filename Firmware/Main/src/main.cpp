@@ -10,6 +10,8 @@
 #define LIS2DW12_REG_WAKE_UP_THS 0x34
 #define LIS2DW12_REG_WAKE_UP_DUR 0x35
 
+#define NUM_READINGS 6
+
 // BQ21080 BMS Registers
 #define BMS_ADDRESS 0x6A
 #define BMS_REG_ICHG_CTRL 0x04
@@ -68,18 +70,18 @@ void SystemPower_Config(void);
 * shutdown
 */
 
+
 /// @brief Calculate the mean of an input array.
 /// @param data The array to compute the mean of.
 /// @return The Mean.
 int calculateMean(int16_t data[]) {
-  int size = sizeof(data) - 1;
   int64_t sum = 0;
 
-  for (int i = 0; i < size; i++) {
+  for (int i = 0; i < NUM_READINGS; i++) {
     sum += data[i];
   }
 
-  return sum / size;
+  return sum / NUM_READINGS;
 }
 
 /// @brief Computes the standard deviation of an array of data.
@@ -88,18 +90,17 @@ int calculateMean(int16_t data[]) {
 int calculateStandardDeviation(int16_t data[]) {
   // Initial Declarations. Need Size and Mean to find the stdev.
   int variance = 0;
-  int size = sizeof(data) - 1;
   int mean = calculateMean(data);
 
   // Loop through each element of the array and add (value - mean)^2
   // I think this is more efficient than using actual square functions or the carrot.
   // It also might just get compiled out.
-  for (int i = 0; i < size; i++) {
+  for (int i = 0; i < NUM_READINGS; i++) {
     variance += (data[i] - mean) * (data[i] - mean);
   }
 
   // Return the stdev.
-  return sqrt(variance / size);
+  return sqrt(variance / NUM_READINGS);
 }
 
 /// @brief Performs the dot product on two input vectors (3D).  
@@ -278,6 +279,7 @@ void setup() {
   if (READ_REG(TAMP->BKP31R) == 1) {
     WRITE_REG(TAMP->BKP31R, 0x0);
 
+    // Enable the LEDs
     digitalWrite(LED_ENABLE, LOW);
 
     // Ctrl 1 to 0x64. 100Hz, Low Power. Expects ~5uA.
@@ -287,15 +289,15 @@ void setup() {
     Wire.write(0b01010000); // ODR 100Hz, LP Mode 12/14, LP Mode 1
     Wire.endTransmission();
 
-    HAL_Delay(25);
+    HAL_Delay(5);
 
     // Init Arrays for mean and standard deviation.
-    int16_t x_vals[10];
-    int16_t y_vals[10];
-    int16_t z_vals[10];
+    int16_t x_vals[NUM_READINGS];
+    int16_t y_vals[NUM_READINGS];
+    int16_t z_vals[NUM_READINGS];
 
     // Fill with 10 initial measurements.
-    for (int i = 0; i < 9; ++i) {
+    for (int i = 0; i < NUM_READINGS; ++i) {
       Acceleration reading = ReadAccelerometer();
       x_vals[i] = reading.x;
       y_vals[i] = reading.y;
@@ -303,12 +305,9 @@ void setup() {
       HAL_Delay(25); // Adjust delay as necessary to suit your needs
     }
 
-    
+    // Begin LEDs now to allow some settle time while we do math.
     pixels.begin();
     pixels.clear();
-    pixels.setBrightness(LED_BRIGHTNESS);
-    pixels.setPixelColor(0, 255);
-    pixels.show();
 
     // Calculate mean and standard deviation
     int stdDevX = calculateStandardDeviation(x_vals);
@@ -349,11 +348,17 @@ void setup() {
       IMUIndex = (IMUIndex + 1) % 10;
     }
     
-    // Pause for suspense? Also needed for settle I think.
-    HAL_Delay(100);
+    // Die has come to a stop. Take 10 measurements and average for final value.
+    for (int i = 0; i < NUM_READINGS; ++i) {
+      Acceleration reading = ReadAccelerometer();
+      x_vals[i] = reading.x;
+      y_vals[i] = reading.y;
+      z_vals[i] = reading.z;
+      HAL_Delay(10); // Adjust delay as necessary to suit your needs
+    }
 
     // Compute roll and color.
-    int roll = computeRoll(ReadAccelerometer()) - 1;
+    int roll = computeRoll({calculateMean(x_vals), calculateMean(y_vals), calculateMean(z_vals)}) - 1;
     if (roll > -1) {
       // If the roll is valid, compute the color to display, then pulse it in and out.
       uint8_t red = (255 - round(13.42 * roll));
