@@ -242,7 +242,7 @@ void initIMU() {
 /// @brief https://www.ti.com/lit/ds/symlink/bq21080.pdf?ts=1712321276802&ref_url=https%253A%252F%252Fwww.ti.com%252Fproduct%252FBQ21080#%5B%7B%22num%22%3A437%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2Cnull%2C125.775%2Cnull%5D
 void initBMS() {
   Wire.beginTransmission(BMS_ADDRESS);
-  Wire.beginTransmission(BMS_REG_ICHG_CTRL);
+  Wire.write(BMS_REG_ICHG_CTRL);
   Wire.write(0x30); // Enable charging, charge current 210mA.
   Wire.endTransmission();
 }
@@ -319,7 +319,7 @@ void setup() {
 
     // Monitor standard deviation of the IMU axes to continue the LED animation.
     uint8_t IMUIndex = 0;
-    while (stDevMean > 100) {
+    while (stDevMean > 200) {
 
       // start of the loop, show the color.
       pixels.setPixelColor(random(NUM_LEDS), colorPalette[random(0, sizeof(colorPalette))]);
