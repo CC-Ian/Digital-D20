@@ -17,9 +17,9 @@
 #define BMS_REG_ICHG_CTRL 0x04
 
 // Neopixel configs
-#define NUM_LEDS 16
+#define NUM_LEDS 32
 #define LED_DATA_PIN PA4
-#define LED_BRIGHTNESS 128
+#define LED_BRIGHTNESS 100
 #define LED_ENABLE PA6
 
 
@@ -45,7 +45,7 @@ int32_t referenceVectors[][3] = {
   {8676, -10664, -9188}   // 10-11
 };
 
-
+// Use adafruit_neopixel to handle the WS2812B RGB LEDs onboard.
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUM_LEDS, LED_DATA_PIN, NEO_GRB + NEO_KHZ800);
 
 // Cyan, Turquoise, Blue, Violet. Pulled from FastLED. I think the violet is wrong? Will have to crosscheck.
@@ -53,22 +53,40 @@ Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUM_LEDS, LED_DATA_PIN, NEO_GRB + N
 uint32_t colorPalette[] = {65535, 4251856, 255, 15631086};
 
 // Prototypes
-
 void SystemClock_Config(void);
 void SystemPower_Config(void);
 
-/*
-* Setup runs from the beginning every time we wake up. Need to check the wakeup source when woken from shutdown.
-* INIT IMU to 12.5HZ low power
-* Begin Lightning animation
-* Reading from IMU to ensure there's movement. May need to chain these? display a diode, then read IMU. Need averaging.
-* At some point, motion stops.
-* Read gravity on IMU
-* determine number face up
-* pluse colour
-* Re-configure IMU for motion detection
-* shutdown
-*/
+/// @brief Enable WKUP 1 and WKUP4 pins on a rising edge.
+void configureWakeupPins() {
+  // GPIO 1 (WKUP1) [PA0]
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  GPIO_InitStruct.Pin = GPIO_PIN_1;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  // GPIO 3 (WKUP4) [PA2]
+  GPIO_InitStruct.Pin = GPIO_PIN_3;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+    
+  /* Disable used wakeup source: PWR_WAKEUP_PIN1 */
+  HAL_PWR_DisableWakeUpPin(PWR_WAKEUP_PIN1);
+  HAL_PWR_DisableWakeUpPin(PWR_WAKEUP_PIN4);
+
+  /* Clear all related wakeup flags */
+  __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
+    
+  /* Enable wakeup pins WKUP1 and WKUP4 */
+  HAL_PWR_EnableWakeUpPin(PWR_WAKEUP_PIN1_HIGH);
+  HAL_PWR_DisableWakeUpPin(PWR_WAKEUP_PIN4_HIGH);
+
+  /* Set TAMP back-up register TAMP_BKP31R to indicate
+       later on that system has entered shutdown mode  */
+  WRITE_REG( TAMP->BKP31R, 0x1 );
+}
 
 
 /// @brief Calculate the mean of an input array.
@@ -76,12 +94,13 @@ void SystemPower_Config(void);
 /// @return The Mean.
 int calculateMean(int16_t data[]) {
   int64_t sum = 0;
+  int size = sizeof(data) / sizeof(data[0]);
 
-  for (int i = 0; i < NUM_READINGS; i++) {
+  for (int i = 0; i < size; i++) {
     sum += data[i];
   }
 
-  return sum / NUM_READINGS;
+  return sum / size;
 }
 
 /// @brief Computes the standard deviation of an array of data.
@@ -90,17 +109,18 @@ int calculateMean(int16_t data[]) {
 int calculateStandardDeviation(int16_t data[]) {
   // Initial Declarations. Need Size and Mean to find the stdev.
   int variance = 0;
+  int size = sizeof(data) / sizeof(data[0]);
   int mean = calculateMean(data);
 
   // Loop through each element of the array and add (value - mean)^2
   // I think this is more efficient than using actual square functions or the carrot.
   // It also might just get compiled out.
-  for (int i = 0; i < NUM_READINGS; i++) {
+  for (int i = 0; i < size; i++) {
     variance += (data[i] - mean) * (data[i] - mean);
   }
 
   // Return the stdev.
-  return sqrt(variance / NUM_READINGS);
+  return sqrt(variance / size);
 }
 
 /// @brief Performs the dot product on two input vectors (3D).  
@@ -204,6 +224,7 @@ void fadeAllPixels(int duration) {
   pixels.setBrightness(LED_BRIGHTNESS);
 }
 
+
 /// @brief Initialize the IMU to low power, low ODR mode, and enable wakeup interrupt.
 void initIMU() {
   // TODO: May wish to replace wakeup with tap interrupt. Was more responsive during testing.
@@ -249,7 +270,14 @@ void initBMS() {
 }
 
 
-/// @brief Main loop. Enters this point on startup. Or when woken from shutdown.
+/// @brief Setup runs from the beginning every time we wake up. Need to check the wakeup source when woken from shutdown.  
+/// @brief INIT IMU to 12.5HZ low power. Init BMS to 250mA charge current.  
+/// @brief Begin Lightning animation and read acceleration data into a moving average.  
+/// @brief Compute standard deviation of the moving average. When it falls off, we know motion has stopped.  
+/// @brief Compute the roll based off gravity and the reference vectors.    
+/// @brief Pulse the appropriate color for the roll.  
+/// @brief Re-configure IMU and wakeup pins.  
+/// @brief Shutdown.  
 void setup() {
   
   HAL_Init();
@@ -260,8 +288,10 @@ void setup() {
 
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(LED_ENABLE, OUTPUT);
+  pinMode(PA2, INPUT_PULLDOWN);
   digitalWrite(LED_ENABLE, HIGH);
 
+  // Slight delay in startup for settle and timing.
   HAL_Delay(100);
 
   // Initialize IMU in wake mode. Higher current draw, for more readings per second.
@@ -279,138 +309,150 @@ void setup() {
   if (READ_REG(TAMP->BKP31R) == 1) {
     WRITE_REG(TAMP->BKP31R, 0x0);
 
-    // Enable the LEDs
-    digitalWrite(LED_ENABLE, LOW);
+    // If the device is on it's charging base, it needs to stay woken up to facilitate reprogramming.
+    if (digitalRead(PA2) == 1) {
+      while (digitalRead(PA2) == 1)
+      {
+        /* code */
+      }
+      
 
-    // Ctrl 1 to 0x64. 100Hz, Low Power. Expects ~5uA.
-    // Kick on IMU in higher ORD for wake mode.
-    Wire.beginTransmission(LIS2DW12_I2C_ADDRESS);
-    Wire.write(LIS2DW12_REG_CTRL1);
-    Wire.write(0b01010000); // ODR 100Hz, LP Mode 12/14, LP Mode 1
-    Wire.endTransmission();
+    } else {
 
-    HAL_Delay(5);
+      // Enable the LEDs
+      digitalWrite(LED_ENABLE, LOW);
 
-    // Init Arrays for mean and standard deviation.
-    int16_t x_vals[NUM_READINGS];
-    int16_t y_vals[NUM_READINGS];
-    int16_t z_vals[NUM_READINGS];
+      // Ctrl 1 to 0x64. 100Hz, Low Power. Expects ~5uA.
+      // Kick on IMU in higher ORD for wake mode.
+      Wire.beginTransmission(LIS2DW12_I2C_ADDRESS);
+      Wire.write(LIS2DW12_REG_CTRL1);
+      Wire.write(0b01010000); // ODR 100Hz, LP Mode 12/14, LP Mode 1
+      Wire.endTransmission();
 
-    // Fill with 10 initial measurements.
-    for (int i = 0; i < NUM_READINGS; ++i) {
-      Acceleration reading = ReadAccelerometer();
-      x_vals[i] = reading.x;
-      y_vals[i] = reading.y;
-      z_vals[i] = reading.z;
-      HAL_Delay(25); // Adjust delay as necessary to suit your needs
-    }
+      HAL_Delay(5);
 
-    // Begin LEDs now to allow some settle time while we do math.
-    pixels.begin();
-    pixels.clear();
+      // Init Arrays for mean and standard deviation.
+      int16_t x_vals[NUM_READINGS];
+      int16_t y_vals[NUM_READINGS];
+      int16_t z_vals[NUM_READINGS];
 
-    // Calculate mean and standard deviation
-    int stdDevX = calculateStandardDeviation(x_vals);
-    int stdDevY = calculateStandardDeviation(y_vals);
-    int stdDevZ = calculateStandardDeviation(z_vals);
+      // Fill with 10 initial measurements.
+      for (int i = 0; i < NUM_READINGS; ++i) {
+        Acceleration reading = ReadAccelerometer();
+        x_vals[i] = reading.x;
+        y_vals[i] = reading.y;
+        z_vals[i] = reading.z;
+        HAL_Delay(25); // Adjust delay as necessary to suit your needs
+      }
 
-    int stDevMean = (stdDevX + stdDevY + stdDevZ) / 3;
-
-    // Monitor standard deviation of the IMU axes to continue the LED animation.
-    uint8_t IMUIndex = 0;
-    while (stDevMean > 200) {
-
-      // start of the loop, show the color.
-      pixels.setPixelColor(random(NUM_LEDS), colorPalette[random(0, sizeof(colorPalette))]);
-      pixels.setPixelColor(random(NUM_LEDS), colorPalette[random(0, sizeof(colorPalette))]);
-      pixels.setPixelColor(random(NUM_LEDS), colorPalette[random(0, sizeof(colorPalette))]);
-      pixels.setBrightness(LED_BRIGHTNESS);
-      pixels.show();
-
-      // Acquire the next data point.
-      Acceleration reading = ReadAccelerometer();
-      x_vals[IMUIndex] = reading.x;
-      y_vals[IMUIndex] = reading.y;
-      z_vals[IMUIndex] = reading.z;
+      // Begin LEDs now to allow some settle time while we do math.
+      pixels.begin();
+      pixels.clear();
 
       // Calculate mean and standard deviation
-      stdDevX = calculateStandardDeviation(x_vals);
-      stdDevY = calculateStandardDeviation(y_vals);
-      stdDevZ = calculateStandardDeviation(z_vals);
+      int stdDevX = calculateStandardDeviation(x_vals);
+      int stdDevY = calculateStandardDeviation(y_vals);
+      int stdDevZ = calculateStandardDeviation(z_vals);
 
-      // Re-compute mean standard deviation. Expected to fall to around 50 when the die has come to a stop.
-      stDevMean = (stdDevX + stdDevY + stdDevZ) / 3;
+      int stDevMean = (stdDevX + stdDevY + stdDevZ) / 3;
 
-      // Fade out the LED, then start the next loop.
-      int fadeDuration = random(40, 100); // Random fade duration between 80ms and 150ms
-      fadeAllPixels(fadeDuration);
+      // Monitor standard deviation of the IMU axes to continue the LED animation.
+      uint8_t IMUIndex = 0;
+      while (stDevMean > 200) {
 
-      IMUIndex = (IMUIndex + 1) % 10;
-    }
-    
-    // Die has come to a stop. Take 10 measurements and average for final value.
-    for (int i = 0; i < NUM_READINGS; ++i) {
-      Acceleration reading = ReadAccelerometer();
-      x_vals[i] = reading.x;
-      y_vals[i] = reading.y;
-      z_vals[i] = reading.z;
-      HAL_Delay(10); // Adjust delay as necessary to suit your needs
-    }
-
-    // Compute roll and color.
-    int roll = computeRoll({calculateMean(x_vals), calculateMean(y_vals), calculateMean(z_vals)}) - 1;
-    if (roll > -1) {
-      // If the roll is valid, compute the color to display, then pulse it in and out.
-      uint8_t red = (255 - round(13.42 * roll));
-      uint8_t green = round(13.42 * roll);
-      uint32_t rollColor = pixels.Color(red, green, 0);
-
-      for (int i = 0; i <= 25; i++) {
-        int brightness = map(i, 0, 25, 0, LED_BRIGHTNESS);
-        pixels.fill(rollColor, 0, NUM_LEDS);
-        pixels.setBrightness(brightness);
+        // start of the loop, show the color.
+        pixels.setPixelColor(random(NUM_LEDS), colorPalette[random(0, sizeof(colorPalette))]);
+        pixels.setPixelColor(random(NUM_LEDS), colorPalette[random(0, sizeof(colorPalette))]);
+        pixels.setPixelColor(random(NUM_LEDS), colorPalette[random(0, sizeof(colorPalette))]);
+        pixels.setBrightness(LED_BRIGHTNESS);
         pixels.show();
-        HAL_Delay(17);
+
+        // Acquire the next data point.
+        Acceleration reading = ReadAccelerometer();
+        x_vals[IMUIndex] = reading.x;
+        y_vals[IMUIndex] = reading.y;
+        z_vals[IMUIndex] = reading.z;
+
+        // Calculate mean and standard deviation
+        stdDevX = calculateStandardDeviation(x_vals);
+        stdDevY = calculateStandardDeviation(y_vals);
+        stdDevZ = calculateStandardDeviation(z_vals);
+
+        // Re-compute mean standard deviation. Expected to fall to around 50 when the die has come to a stop.
+        stDevMean = (stdDevX + stdDevY + stdDevZ) / 3;
+
+        // Fade out the LED, then start the next loop.
+        int fadeDuration = random(40, 100); // Random fade duration between 80ms and 150ms
+        fadeAllPixels(fadeDuration);
+
+        IMUIndex = (IMUIndex + 1) % 10;
       }
-    
-      // Hold
-      HAL_Delay(1000);
-    
-      for (int i = 0; i <= 25; i++) {
-        int brightness = map(i, 0, 25, LED_BRIGHTNESS, 0);
-        pixels.fill(rollColor, 0, NUM_LEDS);
-        pixels.setBrightness(brightness);
-        pixels.show();
-        HAL_Delay(17);
+      
+      // Die has come to a stop. Take 10 measurements and average for final value.
+      for (int i = 0; i < NUM_READINGS; ++i) {
+        Acceleration reading = ReadAccelerometer();
+        x_vals[i] = reading.x;
+        y_vals[i] = reading.y;
+        z_vals[i] = reading.z;
+        HAL_Delay(10); // Adjust delay as necessary to suit your needs
       }
-    } else {
-      for (int iter = 0; iter < 3; iter++) {
+
+      // Compute roll and color.
+      int roll = computeRoll({calculateMean(x_vals), calculateMean(y_vals), calculateMean(z_vals)}) - 1;
+      if (roll > -1) {
+        // If the roll is valid, compute the color to display, then pulse it in and out.
+        uint8_t red = (255 - round(13.42 * roll));
+        uint8_t green = round(13.42 * roll);
+        uint32_t rollColor = pixels.Color(red, green, 0);
+
         for (int i = 0; i <= 25; i++) {
           int brightness = map(i, 0, 25, 0, LED_BRIGHTNESS);
-          pixels.fill(65535, 0, NUM_LEDS);
+          pixels.fill(rollColor, 0, NUM_LEDS);
           pixels.setBrightness(brightness);
           pixels.show();
           HAL_Delay(17);
         }
       
         // Hold
-        HAL_Delay(250);
+        HAL_Delay(1000);
       
         for (int i = 0; i <= 25; i++) {
           int brightness = map(i, 0, 25, LED_BRIGHTNESS, 0);
-          pixels.fill(65535, 0, NUM_LEDS);
+          pixels.fill(rollColor, 0, NUM_LEDS);
           pixels.setBrightness(brightness);
           pixels.show();
           HAL_Delay(17);
         }
+      } else {
+        for (int iter = 0; iter < 3; iter++) {
+          for (int i = 0; i <= 25; i++) {
+            int brightness = map(i, 0, 25, 0, LED_BRIGHTNESS);
+            pixels.fill(65535, 0, NUM_LEDS);
+            pixels.setBrightness(brightness);
+            pixels.show();
+            HAL_Delay(17);
+          }
+        
+          // Hold
+          HAL_Delay(250);
+        
+          for (int i = 0; i <= 25; i++) {
+            int brightness = map(i, 0, 25, LED_BRIGHTNESS, 0);
+            pixels.fill(65535, 0, NUM_LEDS);
+            pixels.setBrightness(brightness);
+            pixels.show();
+            HAL_Delay(17);
+          }
+        }
       }
+
+      HAL_Delay(2);
+      pixels.clear();
+      pixels.setBrightness(0);
+
+      HAL_Delay(50);
+
     }
-
-    HAL_Delay(2);
-    pixels.clear();
-    pixels.setBrightness(0);
-
-    HAL_Delay(50);
 
 
     // Cleanup section.
@@ -430,32 +472,7 @@ void setup() {
 
   HAL_Delay(1000);
 
-  // Everything past this point is used for shutdown mode config
-  // TODO: Make this into it's own function. Self contained so it can be called.
-  // Do I need the ability to selectively enable/disable wakup pins? Maybe disable the IMU during charge? Is it even worth it for 150nA?
-
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  GPIO_InitStruct.Pin = GPIO_PIN_1;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-    
-  // HAL_PWREx_EnableGPIOPullDown(PWR_GPIO_A, PWR_GPIO_BIT_0);
-  // HAL_PWREx_EnablePullUpPullDownConfig();
-
-  /* Disable used wakeup source: PWR_WAKEUP_PIN1 */
-  HAL_PWR_DisableWakeUpPin(PWR_WAKEUP_PIN1);
-
-  /* Clear all related wakeup flags */
-  __HAL_PWR_CLEAR_FLAG(PWR_FLAG_WU);
-    
-  /* Enable wakeup pin WKUP1 */
-  HAL_PWR_EnableWakeUpPin(PWR_WAKEUP_PIN1_HIGH);
-
-  /* Set TAMP back-up register TAMP_BKP31R to indicate
-       later on that system has entered shutdown mode  */
-  WRITE_REG( TAMP->BKP31R, 0x1 );
+  configureWakeupPins();
 
   /* Enter the Shutdown mode */
   HAL_PWREx_EnterSHUTDOWNMode();
