@@ -1725,6 +1725,102 @@
 				)
 			)
 		)
+		(symbol "GND_1"
+			(power)
+			(pin_numbers hide)
+			(pin_names
+				(offset 0) hide)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "#PWR"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Value" "GND"
+				(at 0 -3.81 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "global power"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "GND_1_0_1"
+				(polyline
+					(pts
+						(xy 0 0) (xy 0 -1.27) (xy 1.27 -1.27) (xy 0 -2.54) (xy -1.27 -1.27) (xy 0 -1.27)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "GND_1_1_1"
+				(pin power_in line
+					(at 0 0 270)
+					(length 0)
+					(name "~"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+		)
 		(symbol "MCU_ST_STM32L4:STM32L412KBTx"
 			(exclude_from_sim no)
 			(in_bom yes)
@@ -3634,6 +3730,12 @@
 		(uuid "236f0470-fe7c-4913-ae61-fa6a102d579a")
 	)
 	(junction
+		(at 270.51 48.26)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "27510b34-6835-4c97-828c-1a7eb7398257")
+	)
+	(junction
 		(at 176.53 119.38)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -4319,6 +4421,16 @@
 	)
 	(wire
 		(pts
+			(xy 250.19 48.26) (xy 270.51 48.26)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ad8191cb-d3ec-4886-8724-44dc4d17800d")
+	)
+	(wire
+		(pts
 			(xy 77.47 38.1) (xy 87.63 38.1)
 		)
 		(stroke
@@ -4726,6 +4838,17 @@
 			(justify left bottom)
 		)
 		(uuid "7d0cf35f-1745-46c7-8e3d-a64ee8106230")
+	)
+	(label "WKUP4"
+		(at 250.19 48.26 0)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "9c952da8-7c3f-4113-8ba8-21a8a7b44307")
 	)
 	(label "boot"
 		(at 182.88 26.67 0)
@@ -5389,28 +5512,6 @@
 		(uuid "a68e7844-12d9-4bc2-9fce-6384dcebd0c1")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
 			(at 259.0414 76.2 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "WKUP4"
-		(shape input)
-		(at 250.19 48.26 0)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "aaf335ab-bd0a-492f-93a7-943a4a3ec3f1")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 259.7066 48.26 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6238,6 +6339,77 @@
 			(project "mainboard"
 				(path "/a85f538c-1d87-4134-8dad-ef24b066700b"
 					(reference "#PWR06")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R_Small")
+		(at 270.51 50.8 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "0f29cffd-07d0-4f0b-90c5-e8385bd3604a")
+		(property "Reference" "R10"
+			(at 273.05 49.5299 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+		(property "Value" "100k"
+			(at 273.05 52.0699 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" ""
+			(at 270.51 50.8 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 270.51 50.8 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor, small symbol"
+			(at 270.51 50.8 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "0f06a2ad-a0a0-43b9-9d49-f0cc6905f58b")
+		)
+		(pin "1"
+			(uuid "d489378c-363a-4642-be92-53d088f92dfd")
+		)
+		(instances
+			(project "mainboard"
+				(path "/a85f538c-1d87-4134-8dad-ef24b066700b"
+					(reference "R10")
 					(unit 1)
 				)
 			)
@@ -7099,6 +7271,71 @@
 			(project "mainboard"
 				(path "/a85f538c-1d87-4134-8dad-ef24b066700b"
 					(reference "TP15")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:VBUS")
+		(at 270.51 48.26 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "2af63640-6cff-40ae-bd53-776a208e69dc")
+		(property "Reference" "#PWR042"
+			(at 270.51 52.07 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "VBUS"
+			(at 270.51 43.18 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 270.51 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 270.51 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 270.51 48.26 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "3fec5352-54be-4753-aefd-e480d0e38c67")
+		)
+		(instances
+			(project "mainboard"
+				(path "/a85f538c-1d87-4134-8dad-ef24b066700b"
+					(reference "#PWR042")
 					(unit 1)
 				)
 			)
@@ -11614,6 +11851,72 @@
 			(project "mainboard"
 				(path "/a85f538c-1d87-4134-8dad-ef24b066700b"
 					(reference "#PWR035")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_name "GND_1")
+		(lib_id "power:GND")
+		(at 270.51 53.34 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "e17f215f-d933-4996-91cc-c38d57ba9fef")
+		(property "Reference" "#PWR041"
+			(at 270.51 59.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 270.51 58.42 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 270.51 53.34 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 270.51 53.34 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 270.51 53.34 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "6ad41e4a-5f91-4f9e-a83f-08a12647e34e")
+		)
+		(instances
+			(project "mainboard"
+				(path "/a85f538c-1d87-4134-8dad-ef24b066700b"
+					(reference "#PWR041")
 					(unit 1)
 				)
 			)

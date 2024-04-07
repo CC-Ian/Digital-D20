@@ -1,0 +1,32 @@
+(kicad_sch
+	(version 20231120)
+	(generator "eeschema")
+	(generator_version "8.0")
+	(uuid "f9a4711a-b546-459d-b18d-ca44538e78d2")
+	(paper "A4")
+	(lib_symbols)
+	(text_box "This is an art project. There is no schematic. LOL"
+		(exclude_from_sim no)
+		(at 30.48 27.94 0)
+		(size 83.82 60.325)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(fill
+			(type none)
+		)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left top)
+		)
+		(uuid "710c925e-2b29-4dc0-9f00-63ded4c0d35f")
+	)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+)
