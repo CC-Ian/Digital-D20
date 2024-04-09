@@ -5,7 +5,9 @@
 // LIS2DW12 register addresses
 #define LIS2DW12_I2C_ADDRESS 0x19
 #define LIS2DW12_REG_CTRL1 0x20
+#define LIS2DW12_REG_CTRL2 0x21
 #define LIS2DW12_REG_CTRL4_INT1_PAD_CTRL 0x23
+#define LIS2DW12_REG_CTRL6 0x25
 #define LIS2DW12_REG_CTRL7 0x3F
 #define LIS2DW12_REG_WAKE_UP_THS 0x34
 #define LIS2DW12_REG_WAKE_UP_DUR 0x35
@@ -19,7 +21,7 @@
 // Neopixel configs
 #define NUM_LEDS 32
 #define LED_DATA_PIN PA4
-#define LED_BRIGHTNESS 100
+#define LED_BRIGHTNESS 200
 #define LED_ENABLE PA6
 
 
@@ -103,6 +105,38 @@ int calculateMean(int16_t data[]) {
   return sum / size;
 }
 
+/// @brief 
+/// @param data 
+/// @return 
+int calculateAbsMax(int16_t data[]) {
+  int max = 0;
+  int size = sizeof(data) / sizeof(data[0]);
+
+  for (int i = 0; i < size; i++) {
+    if (abs(data[i]) >= abs(max)) {
+      max = abs(data[i]);
+    }
+  }
+  
+  return max;
+}
+
+/// @brief 
+/// @param data 
+/// @return 
+int calculateAbsMin(int16_t data[]) {
+  int min = 32768;
+  int size = sizeof(data) / sizeof(data[0]);
+
+  for (int i = 0; i < size; i++) {
+    if (abs(data[i]) <= min) {
+      min = abs(data[i]);
+    }
+  }
+  
+  return min;
+}
+
 /// @brief Computes the standard deviation of an array of data.
 /// @param data The Array to compute the standard deviation of. (1D)
 /// @return Standard Deviation as an integer.
@@ -145,23 +179,22 @@ int64_t getLength(int32_t A[3]) {
 Acceleration ReadAccelerometer() {
   Acceleration accel;
 
-  Wire.beginTransmission(0x19); // initiate transmission with LIS2DW12
-  Wire.write(0x28); // select register 0x0F to read from
-  Wire.endTransmission(false); // false to not release the bus
+    Wire.beginTransmission(0x19); // initiate transmission with LIS2DW12
+    Wire.write(0x28); // select register 0x0F to read from
+    Wire.endTransmission(false); // false to not release the bus
 
-  // request 6 bytes of data (X, Y, Z for acceleration)
-  Wire.requestFrom(0x19, 6); 
-  if (Wire.available() >= 6) {
-    // combine the two bytes for X value
-    accel.x = Wire.read() | (Wire.read() << 8); 
-    // do the same for the Y and Z values
-    accel.y = Wire.read() | (Wire.read() << 8);
-    accel.z = Wire.read() | (Wire.read() << 8);
-  }
+    // request 6 bytes of data (X, Y, Z for acceleration)
+    Wire.requestFrom(0x19, 6); 
+    if (Wire.available() >= 6) {
+      // combine the two bytes for X value
+      accel.x = Wire.read() | (Wire.read() << 8); 
+      // do the same for the Y and Z values
+      accel.y = Wire.read() | (Wire.read() << 8);
+      accel.z = Wire.read() | (Wire.read() << 8);
+    }
+
   return accel;
 }
-
-
 
 /// @brief Compute the rolled value using an input vector.
 /// @param measurement The input vector to compare against the references.
@@ -195,8 +228,6 @@ int computeRoll(Acceleration measurement) {
 }
 
 
-
-
 /// @brief Fade all LEDs over the input duration.
 /// @param duration Input Duration.
 void fadeAllPixels(int duration) {
@@ -227,6 +258,13 @@ void fadeAllPixels(int duration) {
 
 /// @brief Initialize the IMU to low power, low ODR mode, and enable wakeup interrupt.
 void initIMU() {
+
+  // // Reset all control registers. Used to unbrick device?
+  // Wire.beginTransmission(LIS2DW12_I2C_ADDRESS);
+  // Wire.write(LIS2DW12_REG_CTRL2);
+  // Wire.write(0b01000100);
+  // Wire.endTransmission();
+
   // TODO: May wish to replace wakeup with tap interrupt. Was more responsive during testing.
   // Ctrl 1 to 0x10. 1.6Hz, Low Power.
   Wire.beginTransmission(LIS2DW12_I2C_ADDRESS);
@@ -239,7 +277,7 @@ void initIMU() {
   Wire.beginTransmission(LIS2DW12_I2C_ADDRESS);
   Wire.write(LIS2DW12_REG_CTRL7);
   Wire.write(0x20);
-  Wire.endTransmission();
+  Wire.endTransmission();  
 
   // Set wakeup duration to zero? (One sample above threshold)
   Wire.beginTransmission(LIS2DW12_I2C_ADDRESS);
@@ -250,7 +288,7 @@ void initIMU() {
   // A high wakeup threshold so it only kicks on when it's being rolled?
   Wire.beginTransmission(LIS2DW12_I2C_ADDRESS);
   Wire.write(LIS2DW12_REG_WAKE_UP_THS);
-  Wire.write(0x08);
+  Wire.write(0x0F);
   Wire.endTransmission();
 
   // Set Interrupt1 to pulse wakeup signal.
@@ -286,10 +324,13 @@ void setup() {
 
   SystemPower_Config();
 
-  pinMode(LED_BUILTIN, OUTPUT);
+  // LED stuff. Active Low.
   pinMode(LED_ENABLE, OUTPUT);
-  pinMode(PA2, INPUT_PULLDOWN);
   digitalWrite(LED_ENABLE, HIGH);
+
+  // WAKEUP4. Connected to Vin.
+  pinMode(PA2, INPUT_PULLDOWN);
+  
 
   // Slight delay in startup for settle and timing.
   HAL_Delay(100);
@@ -303,8 +344,6 @@ void setup() {
   initBMS();
   
 
-  // TODO: Need a way to hold the chip in wake mode during charge. This facilitates the ability to actually speak with the IC through GDB and an stlink.
-
   // If returning from shutdown:
   if (READ_REG(TAMP->BKP31R) == 1) {
     WRITE_REG(TAMP->BKP31R, 0x0);
@@ -313,7 +352,7 @@ void setup() {
     if (digitalRead(PA2) == 1) {
       while (digitalRead(PA2) == 1)
       {
-        /* code */
+        // Empty. Just hold till the pin falls back to ground.
       }
       
 
@@ -342,7 +381,7 @@ void setup() {
         x_vals[i] = reading.x;
         y_vals[i] = reading.y;
         z_vals[i] = reading.z;
-        HAL_Delay(25); // Adjust delay as necessary to suit your needs
+        HAL_Delay(20); // Adjust delay as necessary to suit your needs
       }
 
       // Begin LEDs now to allow some settle time while we do math.
@@ -358,7 +397,9 @@ void setup() {
 
       // Monitor standard deviation of the IMU axes to continue the LED animation.
       uint8_t IMUIndex = 0;
-      while (stDevMean > 200) {
+      while (stDevMean > 200 || calculateAbsMax(x_vals) >= 16384 || calculateAbsMax(y_vals) >= 16384 || calculateAbsMax(z_vals) >= 16384  ||
+      (calculateAbsMin(x_vals) < 5000 && calculateAbsMin(y_vals) < 5000 && calculateAbsMin(z_vals) < 5000))
+      {
 
         // start of the loop, show the color.
         pixels.setPixelColor(random(NUM_LEDS), colorPalette[random(0, sizeof(colorPalette))]);
@@ -425,8 +466,8 @@ void setup() {
         }
       } else {
         for (int iter = 0; iter < 3; iter++) {
-          for (int i = 0; i <= 25; i++) {
-            int brightness = map(i, 0, 25, 0, LED_BRIGHTNESS);
+          for (int i = 0; i <= 10; i++) {
+            int brightness = map(i, 0, 10, 0, LED_BRIGHTNESS);
             pixels.fill(65535, 0, NUM_LEDS);
             pixels.setBrightness(brightness);
             pixels.show();
@@ -434,10 +475,10 @@ void setup() {
           }
         
           // Hold
-          HAL_Delay(250);
+          HAL_Delay(200);
         
-          for (int i = 0; i <= 25; i++) {
-            int brightness = map(i, 0, 25, LED_BRIGHTNESS, 0);
+          for (int i = 0; i <= 10; i++) {
+            int brightness = map(i, 0, 10, LED_BRIGHTNESS, 0);
             pixels.fill(65535, 0, NUM_LEDS);
             pixels.setBrightness(brightness);
             pixels.show();
@@ -468,9 +509,11 @@ void setup() {
 
   }
 
+  // Disable LEDs. Cuts current to the 32x WS2812Bs.
   pinMode(LED_ENABLE, INPUT_FLOATING);
 
-  HAL_Delay(1000);
+  // I don't fully understand this. I think I've got something incorrect. Anything less than this causes an infinite wake loop.
+  HAL_Delay(800);
 
   configureWakeupPins();
 
