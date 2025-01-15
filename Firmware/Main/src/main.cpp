@@ -83,7 +83,7 @@ void configureWakeupPins() {
     
   /* Enable wakeup pins WKUP1 and WKUP4 */
   HAL_PWR_EnableWakeUpPin(PWR_WAKEUP_PIN1_HIGH);
-  HAL_PWR_DisableWakeUpPin(PWR_WAKEUP_PIN4_HIGH);
+  HAL_PWR_EnableWakeUpPin(PWR_WAKEUP_PIN4_HIGH);
 
   /* Set TAMP back-up register TAMP_BKP31R to indicate
        later on that system has entered shutdown mode  */
@@ -342,19 +342,45 @@ void setup() {
 
   initIMU();
   initBMS();
-  
 
   // If returning from shutdown:
   if (READ_REG(TAMP->BKP31R) == 1) {
+    // Clear the wakeup flag?
     WRITE_REG(TAMP->BKP31R, 0x0);
 
     // If the device is on it's charging base, it needs to stay woken up to facilitate reprogramming.
     if (digitalRead(PA2) == 1) {
-      while (digitalRead(PA2) == 1)
-      {
-        // Empty. Just hold till the pin falls back to ground.
-      }
+      HAL_Delay(1000);
+      digitalWrite(LED_ENABLE, LOW);
+      pixels.begin();
+      pixels.clear();
+
+      while (digitalRead(PA2) == 1) {
+        for (int i = 0; i <= 50; i++) {
+          int brightness = map(i, 0, 50, 1, 20);
+          pixels.fill(65535, 0, NUM_LEDS);
+          pixels.setBrightness(brightness);
+          pixels.show();
+          HAL_Delay(25);
+        }
       
+        // Hold
+        HAL_Delay(1000);
+      
+        for (int i = 0; i <= 50; i++) {
+          int brightness = map(i, 0, 50, 20, 1);
+          pixels.fill(65535, 0, NUM_LEDS);
+          pixels.setBrightness(brightness);
+          pixels.show();
+          HAL_Delay(25);
+        }
+
+        // Hold
+        HAL_Delay(1000);
+      }
+
+      pixels.clear();
+      digitalWrite(LED_ENABLE, HIGH);
 
     } else {
 
@@ -494,7 +520,6 @@ void setup() {
       HAL_Delay(50);
 
     }
-
 
     // Cleanup section.
 
