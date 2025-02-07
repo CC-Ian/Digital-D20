@@ -20,7 +20,7 @@
 
 // Neopixel configs
 #define NUM_LEDS 32
-#define LED_DATA_PIN PA4
+#define LED_DATA_PIN PA7
 #define LED_BRIGHTNESS 200
 #define LED_ENABLE PA6
 
