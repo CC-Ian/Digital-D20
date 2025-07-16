@@ -12,10 +12,11 @@
 #define LIS2DW12_REG_WAKE_UP_THS 0x34
 #define LIS2DW12_REG_WAKE_UP_DUR 0x35
 
-// Number of IMU readings to average
 #define NUM_READINGS 6
 
-// BMS Status
+// BQ21080 BMS Registers
+#define BMS_ADDRESS 0x6A
+#define BMS_REG_ICHG_CTRL 0x04
 #define BMS_STAT_PIN PA5
 
 // Neopixel configs
@@ -24,6 +25,7 @@
 #define LED_BRIGHTNESS 200
 #define LED_ENABLE PA6
 
+
 // IMU Structure
 struct Acceleration {
   int16_t x;
@@ -31,18 +33,19 @@ struct Acceleration {
   int16_t z;
 };
 
+
 /// @brief IMU Reference Vectors. 0th index corresponds to the 1 face. It's inverse, the 20.
 int32_t referenceVectors[][3] = {
-  {-5440, 48, 14720},    // 1-20
-  {9120, -9712, -9104},    // 2-19
-  {-15104, 6080, -400},  // 3-18
-  {15376, 5504, 192},    // 4-17
-  {9472, -9536, 9952},     // 5-16
-  {96, 15296, -6464},   // 6-15
-  {-9408, -9264, 10288},    // 7-14
-  {-5936, -560, -14880},  // 8-13
-  {384, 15552, 5344},   // 9-12
-  {-9744, -9920, -8784}   // 10-11
+  {112, -5392, 14652},    // 1-20
+  {9696, 8276, -9236},    // 2-19
+  {-5960, -14796, -356},  // 3-18
+  {-6512, 14676, 408},    // 4-17
+  {9376, 9048, 9792},     // 5-16
+  {-15384, 212, -5200},   // 6-15
+  {9308, -9392, 8884},    // 7-14
+  {-464, -6476, -14828},  // 8-13
+  {-15200, 1672, 5480},   // 9-12
+  {8676, -10664, -9188}   // 10-11
 };
 
 // Use adafruit_neopixel to handle the WS2812B RGB LEDs onboard.
@@ -301,6 +304,16 @@ void initIMU() {
   Wire.endTransmission();
 }
 
+/// @brief DEPRECATED; Init BMS to 250mA charge current.  
+/// @brief DEPRECATED; https://www.ti.com/lit/ds/symlink/bq21080.pdf?ts=1712321276802&ref_url=https%253A%252F%252Fwww.ti.com%252Fproduct%252FBQ21080#%5B%7B%22num%22%3A437%2C%22gen%22%3A0%7D%2C%7B%22name%22%3A%22XYZ%22%7D%2Cnull%2C125.775%2Cnull%5D
+void initBMS() {
+  Wire.beginTransmission(BMS_ADDRESS);
+  Wire.write(BMS_REG_ICHG_CTRL);
+  Wire.write(0x30); // Enable charging, charge current 210mA.
+  Wire.endTransmission();
+}
+
+
 /// @brief Setup runs from the beginning every time we wake up. Need to check the wakeup source when woken from shutdown.  
 /// @brief INIT IMU to 12.5HZ low power. Init BMS to 250mA charge current.  
 /// @brief Begin Lightning animation and read acceleration data into a moving average.  
@@ -323,6 +336,10 @@ void setup() {
 
   // WAKEUP4. Connected to Vin.
   pinMode(PA2, INPUT_PULLDOWN);
+  
+
+  // Slight delay in startup for settle and timing.
+  HAL_Delay(100);
 
   // Initialize IMU in wake mode. Higher current draw, for more readings per second.
   Wire.setSCL(PB6); // Set Clock pin.
@@ -330,234 +347,15 @@ void setup() {
   Wire.begin();
 
   initIMU();
-
-  // If returning from shutdown:
-  if (READ_REG(TAMP->BKP31R) == 1) {
-    // Clear the wakeup flag?
-    WRITE_REG(TAMP->BKP31R, 0x0);
-
-    // If the device is on it's charging base, it needs to stay woken up to facilitate reprogramming.
-    if (digitalRead(PA2) == 1) {
-      // Sense using the STAT Pin.
-      pinMode(BMS_STAT_PIN, INPUT_PULLUP);
-
-      HAL_Delay(1000);
-      digitalWrite(LED_ENABLE, LOW);
-      pixels.begin();
-      pixels.clear();
-
-      bool red = false;
-
-      // Device Actively charging. Show red.
-      while (digitalRead(PA2) == 1 && !digitalRead(BMS_STAT_PIN)) {
-        if (!red) {
-          pixels.fill(16711680, 0, NUM_LEDS);
-          pixels.setBrightness(1);
-          pixels.show();
-          red = true;
-        }
-      }
-
-      // If the device is still on the charging base
-      if (digitalRead(PA2)) {
-        // Device charged. Show green.
-        pixels.fill(32768, 0, NUM_LEDS);
-        pixels.setBrightness(1);
-        pixels.show();
-      }
-
-      // 1 minute delay before turn off, bypass if PA2 goes low.
-      uint32_t startTime = millis();
-      while (millis() - startTime < 60000 && digitalRead(PA2) ) {
-        delay(100); // Small delay to prevent busy-waiting
-      }
-      
-      // Exit the charge cycle.
-      // Disable LEDs. Cuts current to the 32x WS2812Bs.
-      pixels.clear();
-      pinMode(LED_ENABLE, INPUT_FLOATING);
-
-      // I don't fully understand this. I think I've got something incorrect. Anything less than this causes an infinite wake loop.
-      HAL_Delay(800);
-
-      // This should lock out the device if it is fully charged and still on the base.
-      // If full, disable wakeup pin 4 (charge detect line).
-      configureWakeupPins(true, !digitalRead(BMS_STAT_PIN));
-
-      /* Enter the Shutdown mode */
-      HAL_PWREx_EnterSHUTDOWNMode();
-
-    } else {
-
-      // Enable the LEDs
-      digitalWrite(LED_ENABLE, LOW);
-
-      // Ctrl 1 to 0x64. 100Hz, Low Power. Expects ~5uA.
-      // Kick on IMU in higher ORD for wake mode.
-      Wire.beginTransmission(LIS2DW12_I2C_ADDRESS);
-      Wire.write(LIS2DW12_REG_CTRL1);
-      Wire.write(0b01010000); // ODR 100Hz, LP Mode 12/14, LP Mode 1
-      Wire.endTransmission();
-
-      // HAL_Delay(5);
-
-      // Init Arrays for mean and standard deviation.
-      int16_t x_vals[NUM_READINGS];
-      int16_t y_vals[NUM_READINGS];
-      int16_t z_vals[NUM_READINGS];
-
-      // Fill with 10 initial measurements.
-      for (int i = 0; i < NUM_READINGS; ++i) {
-        Acceleration reading = ReadAccelerometer();
-        x_vals[i] = reading.x;
-        y_vals[i] = reading.y;
-        z_vals[i] = reading.z;
-        // HAL_Delay(20); // Adjust delay as necessary to suit your needs
-      }
-
-      // Begin LEDs now to allow some settle time while we do math.
-      pixels.begin();
-      pixels.clear();
-
-      // Calculate mean and standard deviation
-      int stdDevX = calculateStandardDeviation(x_vals);
-      int stdDevY = calculateStandardDeviation(y_vals);
-      int stdDevZ = calculateStandardDeviation(z_vals);
-
-      int stDevMean = (stdDevX + stdDevY + stdDevZ) / 3;
-
-      // Monitor standard deviation of the IMU axes to continue the LED animation.
-      uint8_t IMUIndex = 0;
-      while (stDevMean > 200 || calculateAbsMax(x_vals) >= 16384 || calculateAbsMax(y_vals) >= 16384 || calculateAbsMax(z_vals) >= 16384  ||
-      (calculateAbsMin(x_vals) < 5000 && calculateAbsMin(y_vals) < 5000 && calculateAbsMin(z_vals) < 5000))
-      {
-
-        // start of the loop, show the color.
-        pixels.setPixelColor(random(NUM_LEDS), colorPalette[random(0, sizeof(colorPalette))]);
-        pixels.setPixelColor(random(NUM_LEDS), colorPalette[random(0, sizeof(colorPalette))]);
-        pixels.setPixelColor(random(NUM_LEDS), colorPalette[random(0, sizeof(colorPalette))]);
-        pixels.setBrightness(LED_BRIGHTNESS);
-        pixels.show();
-
-        // Acquire the next data point.
-        Acceleration reading = ReadAccelerometer();
-        x_vals[IMUIndex] = reading.x;
-        y_vals[IMUIndex] = reading.y;
-        z_vals[IMUIndex] = reading.z;
-
-        // Calculate mean and standard deviation
-        stdDevX = calculateStandardDeviation(x_vals);
-        stdDevY = calculateStandardDeviation(y_vals);
-        stdDevZ = calculateStandardDeviation(z_vals);
-
-        // Re-compute mean standard deviation. Expected to fall to around 50 when the die has come to a stop.
-        stDevMean = (stdDevX + stdDevY + stdDevZ) / 3;
-
-        // Fade out the LED, then start the next loop.
-        int fadeDuration = random(40, 100); // Random fade duration between 80ms and 150ms
-        fadeAllPixels(fadeDuration);
-
-        IMUIndex = (IMUIndex + 1) % 10;
-      }
-      
-      // Die has come to a stop. Take 10 measurements and average for final value.
-      for (int i = 0; i < NUM_READINGS; ++i) {
-        Acceleration reading = ReadAccelerometer();
-        x_vals[i] = reading.x;
-        y_vals[i] = reading.y;
-        z_vals[i] = reading.z;
-        // HAL_Delay(10); // Adjust delay as necessary to suit your needs
-      }
-
-      // Compute roll and color.
-      int roll = computeRoll({calculateMean(x_vals), calculateMean(y_vals), calculateMean(z_vals)}) - 1;
-      if (roll > -1) {
-        // If the roll is valid, compute the color to display, then pulse it in and out.
-        uint8_t red = (255 - round(13.42 * roll));
-        uint8_t green = round(13.42 * roll);
-        uint32_t rollColor = pixels.Color(red, green, 0);
-
-        for (int i = 0; i <= 25; i++) {
-          int brightness = map(i, 0, 25, 0, LED_BRIGHTNESS);
-          pixels.fill(rollColor, 0, NUM_LEDS);
-          pixels.setBrightness(brightness);
-          pixels.show();
-          HAL_Delay(17);
-        }
-      
-        // Hold
-        HAL_Delay(1000);
-      
-        for (int i = 0; i <= 25; i++) {
-          int brightness = map(i, 0, 25, LED_BRIGHTNESS, 0);
-          pixels.fill(rollColor, 0, NUM_LEDS);
-          pixels.setBrightness(brightness);
-          pixels.show();
-          HAL_Delay(17);
-        }
-      } else {
-        for (int iter = 0; iter < 3; iter++) {
-          for (int i = 0; i <= 10; i++) {
-            int brightness = map(i, 0, 10, 0, LED_BRIGHTNESS);
-            pixels.fill(65535, 0, NUM_LEDS);
-            pixels.setBrightness(brightness);
-            pixels.show();
-            HAL_Delay(17);
-          }
-        
-          // Hold
-          HAL_Delay(200);
-        
-          for (int i = 0; i <= 10; i++) {
-            int brightness = map(i, 0, 10, LED_BRIGHTNESS, 0);
-            pixels.fill(65535, 0, NUM_LEDS);
-            pixels.setBrightness(brightness);
-            pixels.show();
-            HAL_Delay(17);
-          }
-        }
-      }
-
-      HAL_Delay(2);
-      pixels.clear();
-      pixels.setBrightness(0);
-
-      HAL_Delay(50);
-
-    }
-
-    // Cleanup section.
-
-    // Ctrl 1 to 0x10. 1.6Hz, Low Power.
-    Wire.beginTransmission(LIS2DW12_I2C_ADDRESS);
-    Wire.write(LIS2DW12_REG_CTRL1);
-    Wire.write(0b00010000); // ODR 12.5Hz, LP Mode 12/14, LP Mode 1
-    Wire.endTransmission();
-    Wire.end();
-
-    HAL_Delay(50);
-
-  }
-
-  // Disable LEDs. Cuts current to the 32x WS2812Bs.
-  pinMode(LED_ENABLE, INPUT_FLOATING);
-
-  // I don't fully understand this. I think I've got something incorrect. Anything less than this causes an infinite wake loop.
-  HAL_Delay(800);
-
-  configureWakeupPins();
-
-  /* Enter the Shutdown mode */
-  HAL_PWREx_EnterSHUTDOWNMode();
+  // initBMS();
 
 }
 
 
 /// @brief Required for the arduino framework. Code never reaches this point.
 void loop() {
-  // code should never reach this point.
-  // All actual math and operations are performed within the setup function, as the chip always
-  // re-enters at setup when it's using shutdown mode.
+  Acceleration accel = ReadAccelerometer();
+  delay(1000); // Wait for a second
 }
 
 /// @brief SystemClock Config ripped from a sample st project. Seems to work.  
